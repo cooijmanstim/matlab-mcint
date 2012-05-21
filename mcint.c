@@ -21,7 +21,7 @@ char *getNewString(const mxArray *ms) {
 double integrand(double x[], size_t dim, void *p) {
   mxArray *lhs[1], *rhs[2];
   rhs[0] = *((mxArray **)p);
-  rhs[1] = mxCreateDoubleMatrix(1, dim, mxREAL);
+  rhs[1] = mxCreateDoubleMatrix(dim, 1, mxREAL);
 
   assert(mxIsClass(rhs[0], "function_handle"));
 
@@ -55,10 +55,10 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     mexErrMsgIdAndTxt("MCI:BadArgument", "dim must be a nonnegative integer");
   int dim = (int)mxGetScalar(prhs[1]);
 
-  if (!mxIsDouble(prhs[2]) || mxGetM(prhs[2]) != 1 || mxGetN(prhs[2]) != dim)
-    mexErrMsgIdAndTxt("MCI:BadArgument", "A must be a 1-by-dim vector specifying the lower bounds of each component of x");
-  if (!mxIsDouble(prhs[3]) || mxGetM(prhs[3]) != 1 || mxGetN(prhs[3]) != dim)
-    mexErrMsgIdAndTxt("MCI:BadArgument", "B must be a 1-by-dim vector specifying the upper bounds of each component of x");
+  if (!mxIsDouble(prhs[2]) || mxGetNumberOfElements(prhs[2]) != dim)
+    mexErrMsgIdAndTxt("MCI:BadArgument", "A must be a vector of length dim specifying the lower bounds of each component of x");
+  if (!mxIsDouble(prhs[3]) || mxGetNumberOfElements(prhs[3]) != dim)
+    mexErrMsgIdAndTxt("MCI:BadArgument", "B must be a vector of length dim specifying the upper bounds of each component of x");
   double *A = mxGetPr(prhs[2]), *B = mxGetPr(prhs[3]);
 
   if (!mxIsClass(prhs[4], "function_handle"))

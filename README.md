@@ -6,7 +6,7 @@ MEX interface for calling the GNU Scientific Library's Monte Carlo integration f
 The interface is:
     [y e] = mcint(algorithm, dim, A, B, f, calls, 'PropertyName', PropertyValue);
 
-where algorithm is 'plain', 'miser' or 'vegas'; dim is the dimensionality of the domain of integration; A and B are row vectors specifying, for each dimension, the lower and upper bounds of said domain; f is a handle to a function that takes a 0-by-dim vector and returns a scalar; calls is the number of function evaluations; y is the result of the integral; and e is the estimated error.
+where algorithm is 'plain', 'miser' or 'vegas'; dim is the dimensionality of the domain of integration; A and B are vectors specifying, for each dimension, the lower and upper bounds of said domain; f is a handle to a function that takes a column vector and returns a scalar; calls is the number of function evaluations; y is the result of the integral; and e is the estimated error.
 
 The extra properties that can be passed are listed in the GSL documentation pages for the three algorithms: http://www.gnu.org/software/gsl/manual/html_node/Monte-Carlo-Integration.html .
 
