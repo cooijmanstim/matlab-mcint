@@ -21,11 +21,23 @@ char *getNewString(const mxArray *ms) {
   return s;
 }
 
+/* If an exception occurs in the MATLAB function, MATLAB's default
+ * behavior seems to be to crash.  Let's try to deal with errors somewhat
+ * properly.
+ */
+mxArray *exception = NULL;
+
 double integrand(double x[], size_t dim, void *p) {
   mxArray *lhs[1], *rhs[2];
   double *x2;
   int i;
   double y;
+  
+  /* If an exception has occurred, don't call the MATLAB function again.
+   * If there were a way to stop the GSL routines' continuing calls to the
+   * present function, here would be a good place to do so. */
+  if (exception != NULL)
+      return 0;
   
   rhs[0] = *((mxArray **)p);
   rhs[1] = mxCreateDoubleMatrix(dim, 1, mxREAL);
@@ -40,7 +52,12 @@ double integrand(double x[], size_t dim, void *p) {
   for (i = 0; i < dim; i++)
     x2[i] = x[i];
 
-  mexCallMATLAB(1, lhs, 2, rhs, "feval");
+  exception = mexCallMATLABWithTrap(1, lhs, 2, rhs, "feval");
+  
+  /* lhs is probably corrupt here, so don't use it. */
+  if (exception != NULL)
+      return 0;
+  
   y = mxGetScalar(lhs[0]);
 
   mxDestroyArray(rhs[1]);
@@ -58,6 +75,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   gsl_monte_function gslf;
   gsl_rng *rng;
   double result = 0, abserr = 0;
+  int j;
   
   if (nrhs < minnrhs)
     mexErrMsgIdAndTxt("MCI:BadArgument", "not enough arguments given");
@@ -74,7 +92,14 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     mexErrMsgIdAndTxt("MCI:BadArgument", "A must be a vector of length dim specifying the lower bounds of each component of x");
   if (!mxIsDouble(prhs[3]) || mxGetNumberOfElements(prhs[3]) != dim)
     mexErrMsgIdAndTxt("MCI:BadArgument", "B must be a vector of length dim specifying the upper bounds of each component of x");
-  A = mxGetPr(prhs[2]), B = mxGetPr(prhs[3]);
+
+  A = malloc(sizeof(double) * dim);
+  for (j = 0; j < dim; j++)
+    A[j] = mxGetPr(prhs[2])[j];
+
+  B = malloc(sizeof(double) * dim);
+  for (j = 0; j < dim; j++)
+    B[j] = mxGetPr(prhs[3])[j];
 
   if (!mxIsClass(prhs[4], "function_handle"))
     mexErrMsgIdAndTxt("MCI:BadArgument", "f must be a function handle");
@@ -112,6 +137,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
       else if (strcmp(k, "mode"      ) == 0) params.mode       =    (int)v;
       else if (strcmp(k, "verbose"   ) == 0) params.verbose    =    (int)v;
       else mexErrMsgIdAndTxt("MCI:BadArgument", "unknown parameter: %s", prhs[i]);
+      
+      free(k);
     }
     gsl_monte_vegas_params_set(state, &params);
 
@@ -143,6 +170,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
       else if (strcmp(k, "alpha")                   == 0) params.alpha                   =         v;
       else if (strcmp(k, "dither")                  == 0) params.dither                  =         v;
       else mexErrMsgIdAndTxt("MCI:BadArgument", "unknown parameter: %s", prhs[i]);
+      
+      free(k);
     }
     gsl_monte_miser_params_set(state, &params);
 
@@ -156,9 +185,18 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   } else {
     mexErrMsgIdAndTxt("MCI:BadArgument", "unknown algorithm: %s", algorithm);
   }
-
-  if (nlhs > 0) plhs[0] = mxCreateDoubleScalar(result);
-  if (nlhs > 1) plhs[1] = mxCreateDoubleScalar(abserr);
   
+  free(algorithm);
+  free(A);
+  free(B);
   gsl_rng_free(rng);
+
+  if (exception != NULL) {
+    mxArray *ex = exception;
+    exception = NULL;
+    mexCallMATLAB(0, NULL, 1, &ex, "throw");
+  }
+
+  plhs[0] = mxCreateDoubleScalar(result);
+  if (nlhs > 1) plhs[1] = mxCreateDoubleScalar(abserr);
 }
