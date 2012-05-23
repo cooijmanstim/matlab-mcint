@@ -11,6 +11,11 @@
 #include "mex.h"
 #include "matrix.h"
 
+/* for windows */
+#ifndef snprintf
+#define snprintf _snprintf
+#endif
+
 char *getNewString(const mxArray *ms) {
   size_t len;
   char *s;
@@ -24,8 +29,33 @@ char *getNewString(const mxArray *ms) {
 /* If an exception occurs in the MATLAB function, MATLAB's default
  * behavior seems to be to crash.  Let's try to deal with errors somewhat
  * properly.
+ * This is also used for GSL errors.
  */
 mxArray *exception = NULL;
+
+void gslErrorHandler(const char *reason, const char *file, int line, int gsl_errno) {
+  char *msgIdent, *msgString;
+  const char *msgIdentPrefix, *msgStringPrefix;
+  size_t msgIdentLength, msgStringLength;
+  mxArray *rhs[2];
+  mxArray *ex1, *ex2;
+
+  // hate hate hate
+  msgIdentPrefix = "MCI:GSL:errno";
+  msgIdentLength = 20 + strlen(msgIdentPrefix);
+  msgIdent = malloc(msgIdentLength * sizeof(char));
+  snprintf(msgIdent, msgIdentLength, "%s%i", msgIdentPrefix, gsl_errno);
+  rhs[0] = mxCreateString(msgIdent);
+
+  msgStringPrefix = reason;
+  msgStringLength = 20 + strlen(file) + strlen(msgStringPrefix);
+  msgString = malloc(msgStringLength * sizeof(char));
+  snprintf(msgString, msgStringLength, "'%s' at %s:%i", msgStringPrefix, file, line);
+  rhs[1] = mxCreateString(msgString);
+
+  ex2 = mexCallMATLABWithTrap(1, &ex1, 2, rhs, "MException");
+  exception = ex2 == NULL ? ex1 : ex2;
+}
 
 double integrand(double x[], size_t dim, void *p) {
   mxArray *lhs[1], *rhs[2];
@@ -76,6 +106,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
   gsl_rng *rng;
   double result = 0, abserr = 0;
   int j;
+
+  gsl_set_error_handler(&gslErrorHandler);
   
   if (nrhs < minnrhs)
     mexErrMsgIdAndTxt("MCI:BadArgument", "not enough arguments given");
@@ -142,11 +174,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     }
     gsl_monte_vegas_params_set(state, &params);
 
-    gsl_monte_vegas_integrate(&gslf, A, B, dim, calls, rng, state, &result, &abserr);
-
-    chisq = gsl_monte_vegas_chisq(state);
-    if (abs(1 - chisq) > 1e3)
-      mexWarnMsgIdAndTxt("MCI:ChisqInconsistent", "Chi-squared statistic is %f, which may be too far from 1.  Results may be inaccurate.", chisq);
+    if (gsl_monte_vegas_integrate(&gslf, A, B, dim, calls, rng, state, &result, &abserr) == 0) {
+      chisq = gsl_monte_vegas_chisq(state);
+      if (abs(1 - chisq) > 1e3)
+        mexWarnMsgIdAndTxt("MCI:ChisqInconsistent", "Chi-squared statistic is %f, which may be too far from 1.  Results may be inaccurate.", chisq);
+    }
 
     gsl_monte_vegas_free(state);
   } else if (strcmp(algorithm, "miser") == 0) {
